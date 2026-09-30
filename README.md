@@ -2,6 +2,8 @@
 
 > **AI-Powered University & Faculty Discovery, Institution-Scoped Academic Search, and Grounded Gemini AI Outreach Engine.**
 
+## live demo:https://neuro-web-labs-prof-match-ai.vercel.app/
+
 ProfMatch AI transforms academic supervisor search from generic keyword querying into a verified, multi-source **Institution-First Entity-Relationship Pipeline**. It enables prospective graduate and doctoral students to discover real active faculty members across Asian, US, UK, and global universities, evaluate research compatibility using Google Gemini AI, and build personalized outreach campaigns.
 
 ---
