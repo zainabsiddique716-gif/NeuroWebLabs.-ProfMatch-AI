@@ -1,28 +1,28 @@
+// app/api/email-draft/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { generateColdEmailWithGemini } from '@/lib/gemini';
-import { Professor, StudentProfile } from '@/lib/types';
+import { generateOutreachEmail } from '@/lib/email-generator';
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    const { professor, profile, tone = 'Academic Professional' } = body as {
-      professor: Professor;
-      profile: StudentProfile;
-      tone: 'Academic Professional' | 'Enthusiastic & Detailed' | 'Direct & Concise';
-    };
+    const body = await request.json();
+    const { professor, userInterest, userProposal, studyLevel, userBio, tone } = body;
 
-    if (!professor || !profile) {
-      return NextResponse.json({ error: 'Missing professor or profile object' }, { status: 400 });
+    if (!professor || !userInterest) {
+      return NextResponse.json({ error: 'Professor details and user interest are required.' }, { status: 400 });
     }
 
-    const emailDraft = await generateColdEmailWithGemini(professor, profile, tone);
-
-    return NextResponse.json({
-      success: true,
-      emailDraft
+    const emailDraft = await generateOutreachEmail({
+      professor,
+      userInterest,
+      userProposal,
+      studyLevel,
+      userBio,
+      tone,
     });
+
+    return NextResponse.json({ emailDraft });
   } catch (error: any) {
-    console.error('Email Draft API Error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to draft email' }, { status: 500 });
+    console.error('Email draft route error:', error);
+    return NextResponse.json({ error: 'Failed to generate personalized email draft.' }, { status: 500 });
   }
 }

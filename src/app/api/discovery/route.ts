@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Score Alignment using Gemini / AI Engine
     const scoredProfessors = await Promise.all(
-      rawProfessors.map(async (prof) => {
+      rawProfessors.map(async (prof: any) => {
         const aiResult = await scoreProfessorWithGemini(prof, studentProfile);
         return {
           ...prof,
@@ -32,14 +32,14 @@ export async function POST(req: NextRequest) {
     );
 
     // 3. Sort by Alignment Score descending
-    scoredProfessors.sort((a, b) => (b.alignmentScore || 0) - (a.alignmentScore || 0));
+    scoredProfessors.sort((a: any, b: any) => (b.alignmentScore || 0) - (a.alignmentScore || 0));
 
     return NextResponse.json({
       success: true,
       domain,
       country,
       professors: scoredProfessors,
-      totalUniversities: new Set(scoredProfessors.map(p => p.university)).size,
+      totalUniversities: new Set(scoredProfessors.map((p: any) => p.university)).size,
       totalProfessors: scoredProfessors.length,
       timestamp: new Date().toISOString()
     });

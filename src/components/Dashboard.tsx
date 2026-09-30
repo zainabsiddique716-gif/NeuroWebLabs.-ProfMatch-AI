@@ -172,7 +172,7 @@ export default function Dashboard({
 
           {/* Export CSV Button */}
           <button
-            onClick={() => exportProfessorsToCSV(filteredProfessors)}
+            onClick={() => exportProfessorsToCSV(filteredProfessors as any)}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-bold shadow-sm transition-all"
           >
             <Download className="w-3.5 h-3.5" />
@@ -202,15 +202,37 @@ export default function Dashboard({
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProfessors.map((prof) => (
+          {filteredProfessors.map((prof: any) => (
             <ProfessorCard
               key={prof.id}
-              professor={prof}
-              onSelect={onSelectProfessor}
-              onDraftEmail={onDraftEmail}
+              professor={{
+                id: prof.id,
+                name: prof.name,
+                title: prof.title || 'Faculty Researcher',
+                university: prof.university,
+                universityId: prof.university || '',
+                country: prof.country,
+                countryCode: prof.country || 'US',
+                researchInterests: prof.researchAreas || [],
+                recentPublications: (prof.recentPublications || []).map((p: any) => ({
+                  id: p.title,
+                  title: p.title,
+                  year: p.year,
+                  citedByCount: p.citations,
+                })),
+                citationCount: prof.recentPublications?.[0]?.citations || 0,
+                profileUrl: prof.profileUrl || '',
+                scholarUrl: prof.googleScholarUrl || '',
+                matchScore: prof.alignmentScore,
+                matchReason: prof.alignmentJustification,
+                emailStatus: 'Email not publicly available',
+                dataSource: 'OpenAlex',
+              }}
+              onOpenDetails={(p) => onSelectProfessor(prof)}
             />
           ))}
         </div>
+
       ) : (
         /* Data Table View */
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm font-serif">
