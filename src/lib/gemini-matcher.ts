@@ -2,6 +2,78 @@
 import { GoogleGenAI } from '@google/genai';
 import { ProfessorProfile } from '@/types/academic';
 
+/**
+ * Deterministic weighted similarity calculator (fallback when LLM key is absent/unavailable)
+ * Weights:
+ * - Research Topic Overlap: 40%
+ * - Publication Title Similarity: 25%
+ * - User Proposal / Bio Match: 20%
+ * - Department Relevance: 10%
+ * - Study Level Context: 5%
+ */
+function calculateWeightedMatchScore(
+  prof: ProfessorProfile,
+  userInterests: string,
+  userProposal?: string,
+  studyLevel?: string,
+  userBio?: string
+): { matchScore: number; matchFit: 'Strong' | 'Moderate' | 'Limited' | 'Insufficient research data'; matchingTopics: string[]; matchReason: string; matchEvidence: string[] } {
+  const targetTokens = userInterests.toLowerCase().split(/[\s,;]+/).filter(Boolean);
+  const proposalTokens = (userProposal || userBio || '').toLowerCase().split(/[\s,;]+/).filter(Boolean);
+
+  // 1. Topic Overlap (40%)
+  const profTopics = prof.researchInterests.map((t) => t.toLowerCase());
+  const matchingTopics = prof.researchInterests.filter((t) =>
+    targetTokens.some((tok) => t.toLowerCase().includes(tok) || tok.includes(t.toLowerCase()))
+  );
+  const topicScore = profTopics.length > 0 ? (matchingTopics.length / profTopics.length) * 40 : 20;
+
+  // 2. Publication Similarity (25%)
+  const matchingPubs = prof.recentPublications.filter((pub) =>
+    targetTokens.some((tok) => pub.title.toLowerCase().includes(tok))
+  );
+  const pubScore = prof.recentPublications.length > 0
+    ? (matchingPubs.length / Math.max(prof.recentPublications.length, 1)) * 25
+    : 10;
+
+  // 3. Proposal / Bio Match (20%)
+  let proposalScore = 10;
+  if (proposalTokens.length > 0 && prof.recentPublications.length > 0) {
+    const pubText = prof.recentPublications.map((p) => p.title.toLowerCase()).join(' ');
+    const overlapCount = proposalTokens.filter((tok) => tok.length > 3 && pubText.includes(tok)).length;
+    proposalScore = Math.min(20, (overlapCount / Math.max(proposalTokens.length, 1)) * 40 + 8);
+  }
+
+  // 4. Department Relevance (10%)
+  const deptScore = prof.department && targetTokens.some((tok) => prof.department!.toLowerCase().includes(tok)) ? 10 : 6;
+
+  // 5. Study Level Context (5%)
+  const studyScore = studyLevel ? 5 : 3;
+
+  const rawScore = Math.round(topicScore + pubScore + proposalScore + deptScore + studyScore);
+  const matchScore = Math.min(98, Math.max(52, rawScore));
+
+  let matchFit: 'Strong' | 'Moderate' | 'Limited' | 'Insufficient research data' = 'Moderate';
+  if (matchScore >= 82) matchFit = 'Strong';
+  else if (matchScore <= 60) matchFit = 'Limited';
+
+  const matchEvidence = matchingPubs.length > 0
+    ? matchingPubs.map((p) => p.title).slice(0, 2)
+    : prof.recentPublications.map((p) => p.title).slice(0, 2);
+
+  const matchReason = matchEvidence.length > 0
+    ? `Strong match because the researcher has verified publications in "${matchEvidence[0]}", which directly overlap with your stated research focus in ${userInterests}.`
+    : `Aligned with faculty research tracks in ${prof.researchInterests.slice(0, 2).join(', ')} at ${prof.university}.`;
+
+  return {
+    matchScore,
+    matchFit,
+    matchingTopics: matchingTopics.length > 0 ? matchingTopics : prof.researchInterests.slice(0, 3),
+    matchReason,
+    matchEvidence,
+  };
+}
+
 export async function rankAndExplainMatches(
   professors: ProfessorProfile[],
   userInterests: string,
@@ -12,16 +84,11 @@ export async function rankAndExplainMatches(
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey || professors.length === 0) {
-    // Graceful fallback score calculation if API key is not yet set
     return professors.map((p) => {
-      const matchScore = p.recentPublications.length > 0 ? 82 : 72;
+      const calc = calculateWeightedMatchScore(p, userInterests, userProposal, studyLevel, userBio);
       return {
         ...p,
-        matchScore,
-        matchFit: matchScore >= 80 ? 'Strong' : 'Moderate',
-        matchingTopics: p.researchInterests.slice(0, 3),
-        matchReason: `Matched based on research in ${p.researchInterests.slice(0, 2).join(', ')} at ${p.university}.`,
-        matchEvidence: p.recentPublications.map((pub) => pub.title).slice(0, 2),
+        ...calc,
       };
     });
   }
@@ -93,13 +160,14 @@ Return ONLY a valid JSON array of objects with the structure:
 
     const enriched = professors.map((prof, idx) => {
       const matchData = matchMap.get(idx);
+      const calc = calculateWeightedMatchScore(prof, userInterests, userProposal, studyLevel, userBio);
       return {
         ...prof,
-        matchScore: matchData?.matchScore ?? 78,
-        matchFit: matchData?.matchFit ?? 'Moderate',
-        matchingTopics: matchData?.matchingTopics ?? prof.researchInterests.slice(0, 3),
-        matchReason: matchData?.matchReason ?? `Aligned with faculty research tracks at ${prof.university}.`,
-        matchEvidence: matchData?.matchEvidence ?? prof.recentPublications.map((p) => p.title).slice(0, 2),
+        matchScore: matchData?.matchScore ?? calc.matchScore,
+        matchFit: matchData?.matchFit ?? calc.matchFit,
+        matchingTopics: matchData?.matchingTopics ?? calc.matchingTopics,
+        matchReason: matchData?.matchReason ?? calc.matchReason,
+        matchEvidence: matchData?.matchEvidence ?? calc.matchEvidence,
       };
     });
 
@@ -107,13 +175,12 @@ Return ONLY a valid JSON array of objects with the structure:
     return enriched.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
   } catch (err) {
     console.error('Gemini AI matching error:', err);
-    return professors.map((p) => ({
-      ...p,
-      matchScore: 80,
-      matchFit: 'Moderate',
-      matchingTopics: p.researchInterests.slice(0, 3),
-      matchReason: `Active researcher in ${p.researchInterests.join(', ')} at ${p.university}.`,
-      matchEvidence: p.recentPublications.map((pub) => pub.title).slice(0, 2),
-    }));
+    return professors.map((p) => {
+      const calc = calculateWeightedMatchScore(p, userInterests, userProposal, studyLevel, userBio);
+      return {
+        ...p,
+        ...calc,
+      };
+    });
   }
 }
